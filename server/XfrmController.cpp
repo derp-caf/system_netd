@@ -44,11 +44,6 @@
 #include <linux/xfrm.h>
 
 #define LOG_TAG "XfrmController"
-#include "android-base/stringprintf.h"
-#include "android-base/strings.h"
-#include "android-base/unique_fd.h"
-#include <android/net/INetd.h>
-#include <log/log_properties.h>
 #include "InterfaceController.h"
 #include "NetdConstants.h"
 #include "NetlinkCommands.h"
@@ -57,6 +52,11 @@
 #include "netdutils/Fd.h"
 #include "netdutils/Slice.h"
 #include "netdutils/Syscalls.h"
+#include <android-base/properties.h>
+#include <android-base/stringprintf.h>
+#include <android-base/strings.h>
+#include <android-base/unique_fd.h>
+#include <android/net/INetd.h>
 #include <cutils/log.h>
 #include <cutils/properties.h>
 #include <logwrap/logwrap.h>
@@ -86,6 +86,11 @@ constexpr uint32_t RAND_SPI_MIN = 256;
 constexpr uint32_t RAND_SPI_MAX = 0xFFFFFFFE;
 
 constexpr uint32_t INVALID_SPI = 0;
+
+static inline bool isEngBuild() {
+    static const std::string sBuildType = android::base::GetProperty("ro.build.type", "user");
+    return sBuildType == "eng";
+}
 
 #define XFRM_MSG_TRANS(x)                                                                          \
     case x:                                                                                        \
@@ -126,18 +131,18 @@ uint8_t kPadBytesArray[] = {0, 0, 0};
 void* kPadBytes = static_cast<void*>(kPadBytesArray);
 
 #define LOG_HEX(__desc16__, __buf__, __len__)                                                      \
-    if (__android_log_is_debuggable()) {                                                           \
-        do {                                                                                       \
+    do {                                                                                           \
+        if (isEngBuild()) {                                                                        \
             logHex(__desc16__, __buf__, __len__);                                                  \
-        } while (0);                                                                               \
-    }
+        }                                                                                          \
+    } while (0)
 
 #define LOG_IOV(__iov__)                                                                           \
-    if (__android_log_is_debuggable()) {                                                           \
-        do {                                                                                       \
+    do {                                                                                           \
+        if (isEngBuild()) {                                                                        \
             logIov(__iov__);                                                                       \
-        } while (0);                                                                               \
-    }
+        }                                                                                          \
+    } while (0)
 
 void logHex(const char* desc16, const char* buf, size_t len) {
     char* printBuf = new char[len * 2 + 1 + 26]; // len->ascii, +newline, +prefix strlen
@@ -1346,7 +1351,8 @@ int XfrmController::addVirtualTunnelInterface(const std::string& deviceName,
         flags |= NLM_F_EXCL | NLM_F_CREATE;
     }
 
-    int ret = sendNetlinkRequest(action, flags, iov, ARRAY_SIZE(iov), nullptr);
+    // sendNetlinkRequest returns -errno
+    int ret = -1 * sendNetlinkRequest(action, flags, iov, ARRAY_SIZE(iov), nullptr);
     if (ret) {
         ALOGE("Error in %s virtual tunnel interface. Error Code: %d",
               isUpdate ? "updating" : "adding", ret);
@@ -1383,7 +1389,8 @@ int XfrmController::removeVirtualTunnelInterface(const std::string& deviceName) 
     uint16_t action = RTM_DELLINK;
     uint16_t flags = NLM_F_REQUEST | NLM_F_ACK;
 
-    int ret = sendNetlinkRequest(action, flags, iov, ARRAY_SIZE(iov), nullptr);
+    // sendNetlinkRequest returns -errno
+    int ret = -1 * sendNetlinkRequest(action, flags, iov, ARRAY_SIZE(iov), nullptr);
     if (ret) {
         ALOGE("Error in removing virtual tunnel interface %s. Error Code: %d", iflaIfNameStrValue,
               ret);
